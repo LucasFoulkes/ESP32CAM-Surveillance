@@ -1,36 +1,34 @@
-import subprocess
 import os
-from flask import Flask, Response, render_template, send_file
-import cv2
-import time
+import subprocess
 import threading
-import requests
+import time
 from datetime import datetime
-from waitress import serve
-import logging
 from queue import Queue
+
+import cv2
+import requests
+from flask import Flask, Response, render_template, send_file
+from waitress import serve
 
 app = Flask(__name__)
 lock = threading.Lock()
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
-def send_request_to_camera():
-    url = 'http://camera.local/control?var=framesize&val=9'
-    try:
-        response = requests.get(url, timeout=10)
-        logging.info('Request sent successfully to the camera.' if response.status_code == 200 else f'Failed to send request to the camera. Status code: {response.status_code}')
-    except requests.exceptions.RequestException as e:
-        logging.error(f'Error occurred while sending request to the camera: {e}')
-
-send_request_to_camera()
-cap = cv2.VideoCapture('http://camera.local:81/stream')
 frame_queue = Queue()
 
+def send_request_to_camera():
+    url = 'httpcamera.local/control?var=framesize&val=9'
+    try:
+        response = requests.get(url, timeout=10)
+        app.logger.info('Request sent successfully to the camera.' if response.status_code == 200 else f'Failed to send request to the camera. Status code: {response.status_code}')
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f'Error occurred while sending request to the camera: {e}')
+
 def capture_frames():
+    cap = cv2.VideoCapture('http://camera.local:81/stream')
+    # cap = cv2.VideoCapture('http://127.0.0.1:5000/video_feed')
     while True:
         ret, frame = cap.read()
         if not ret:
-            logging.error("Error reading frame from the stream.")
+            app.logger.error("Error reading frame from the stream.")
             break
         frame_queue.put(frame)
 
@@ -38,6 +36,7 @@ def record_video():
     start_time = time.time()
     video_count = 1
     out = None
+    tmp_filename = None
 
     while True:
         frame = frame_queue.get()
@@ -48,18 +47,22 @@ def record_video():
             current_datetime = datetime.now()
             log_folder = os.path.join(app.static_folder, 'logs', current_datetime.strftime('%Y-%m-%d'))
             os.makedirs(log_folder, exist_ok=True)
-            filename = f"{current_datetime.strftime('%Y-%m-%d_%H-%M-%S')}_{video_count}.mp4"
-            out = cv2.VideoWriter(os.path.join(log_folder, filename), cv2.VideoWriter_fourcc(*'mp4v'), 30, (frame.shape[1], frame.shape[0]))
-            logging.info(f'Created new VideoWriter object for file: {filename}')
+            tmp_filename = f"{current_datetime.strftime('%Y-%m-%d_%H-%M-%S')}_{video_count}_tmp.mp4"
+            final_filename = f"{current_datetime.strftime('%Y-%m-%d_%H-%M-%S')}_{video_count}.mp4"
+            out = cv2.VideoWriter(os.path.join(log_folder, tmp_filename), cv2.VideoWriter_fourcc(*'mp4v'), 30, (frame.shape[1], frame.shape[0]))
+            app.logger.info(f'Created new VideoWriter object for file: {tmp_filename}')
 
         out.write(frame)
 
         if time.time() - start_time >= 60:
             out.release()
-            logging.info(f'Released VideoWriter object for file: {filename}')
+            app.logger.info(f'Released VideoWriter object for file: {tmp_filename}')
+            os.rename(os.path.join(log_folder, tmp_filename), os.path.join(log_folder, final_filename))
+            app.logger.info(f'Renamed temporary file to: {final_filename}')
             video_count += 1
             start_time = time.time()
             out = None
+            tmp_filename = None
 
         frame_queue.task_done()
 
@@ -76,7 +79,7 @@ def generate_frames():
 def get_logs_folder():
     logs_folder = os.path.join(app.static_folder, 'logs')
     if not os.path.exists(logs_folder):
-        logging.warning("No logs folder found.")
+        app.logger.warning("No logs folder found.")
     return logs_folder
 
 def concatenate_files(logs_folder):
@@ -96,15 +99,33 @@ def concatenate_files(logs_folder):
     list_file_path = os.path.join(logs_folder, 'concat_list.txt')
 
     with open(list_file_path, 'w') as list_file:
-        for file in files:
-            list_file.write(f"file '{file}'\n")
+        list_file.write('\n'.join([f"file '{file}'" for file in files]))
 
     output_path = os.path.join(logs_folder, output_file_name)
     command = ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', list_file_path, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-y', output_path]
     subprocess.run(command, check=True)
     os.remove(list_file_path)
 
+    # Delete the individual video files after successful merge
+    for file in files:
+        os.remove(os.path.join(logs_folder, file))
+
     return output_file_name
+
+def cleanup_tmp_files():
+    logs_folder = os.path.join(app.static_folder, 'logs')
+    if not os.path.exists(logs_folder):
+        return
+
+    for root, dirs, files in os.walk(logs_folder):
+        for file in files:
+            if file.endswith('_tmp.mp4'):
+                tmp_file_path = os.path.join(root, file)
+                try:
+                    os.remove(tmp_file_path)
+                    app.logger.info(f'Deleted temporary file: {tmp_file_path}')
+                except Exception as e:
+                    app.logger.warning(f'Failed to delete temporary file: {tmp_file_path}. Error: {str(e)}')
 
 @app.route('/')
 def index():
@@ -124,7 +145,7 @@ def folders():
 def play(folder):
     logs_folder = os.path.join(get_logs_folder(), folder)
     if not os.path.exists(logs_folder):
-        logging.warning(f"No folder named {folder} found.")
+        app.logger.warning(f"No folder named {folder} found.")
         return (f"No folder named {folder} found.", 404)
 
     try:
@@ -135,7 +156,7 @@ def play(folder):
         else:
             return ("No files to concatenate.", 404)
     except Exception as e:
-        logging.error(f"Error occurred during concatenation: {str(e)}")
+        app.logger.error(f"Error occurred during concatenation: {str(e)}")
         return ("An error occurred during concatenation.", 500)
 
 @app.route('/video/<path:video_path>')
@@ -144,8 +165,10 @@ def serve_video(video_path):
 
 if __name__ == '__main__':
     os.makedirs(os.path.join(app.static_folder, 'logs'), exist_ok=True)
+    send_request_to_camera()
+    cleanup_tmp_files()  # Call the cleanup function at the start of the script
     capture_thread = threading.Thread(target=capture_frames)
     record_thread = threading.Thread(target=record_video)
     capture_thread.start()
     record_thread.start()
-    serve(app, host='0.0.0.0', port=5000)
+    serve(app, host='0.0.0.0', port=3000)
