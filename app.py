@@ -15,7 +15,7 @@ lock = threading.Lock()
 frame_queue = Queue()
 
 def send_request_to_camera():
-    url = 'httpcamera.local/control?var=framesize&val=9'
+    url = 'http://camera.local/control?var=framesize&val=9'
     try:
         response = requests.get(url, timeout=10)
         app.logger.info('Request sent successfully to the camera.' if response.status_code == 200 else f'Failed to send request to the camera. Status code: {response.status_code}')
