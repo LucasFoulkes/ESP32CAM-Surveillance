@@ -27,8 +27,14 @@ def record_video_from_stream(stream_url, max_attempts=5):
         start_time = datetime.now()
         date_dir = start_time.strftime('%Y-%m-%d')
         filename = start_time.strftime('%Y-%m-%d_%H-%M-%S_continuous.avi')
-        os.makedirs(date_dir, exist_ok=True)
-        output_filepath = os.path.join(date_dir, filename)
+
+        # Create the "recordings" directory if it doesn't exist
+        os.makedirs('recordings', exist_ok=True)
+
+        # Save the day folder inside the "recordings" directory
+        day_dir = os.path.join('recordings', date_dir)
+        os.makedirs(day_dir, exist_ok=True)
+        output_filepath = os.path.join(day_dir, filename)
 
         out = create_video_writer(output_filepath, frame_width, frame_height)
 
