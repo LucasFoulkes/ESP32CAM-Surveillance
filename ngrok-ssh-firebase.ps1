@@ -1,21 +1,6 @@
-# Function to check internet connectivity
-function Test-InternetConnection {
-    try {
-        $response = Invoke-RestMethod -Uri "https://www.google.com" -Method Head -TimeoutSec 5
-        return $true
-    }
-    catch {
-        return $false
-    }
-}
-
-# Function to update Firebase with the forwarding address
-function Update-Firebase($forwardingAddress) {
-    $firebaseUrl = "https://sshrelay-23b2e-default-rtdb.firebaseio.com/vr001.json"
-    $data = @{
-        "forwarding_address" = $forwardingAddress
-    }
-    Invoke-RestMethod -Method Put -ContentType "application/json" -Body ($data | ConvertTo-Json) -Uri $firebaseUrl
+# Function to run Python script
+function Run-PythonScript {
+    Start-Process -FilePath "python" -ArgumentList "C:\Path\To\my_python_script.py"
 }
 
 $ngrokRunning = $false
@@ -39,6 +24,9 @@ while ($true) {
                 # Update Firebase with the ngrok address
                 Update-Firebase $ngrokAddress
                 Write-Output "Ngrok address sent to Firebase: $ngrokAddress"
+
+                # Run Python script
+                Run-PythonScript
 
                 $ngrokRunning = $true
             }
