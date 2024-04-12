@@ -18,6 +18,9 @@ function Update-Firebase($forwardingAddress) {
     Invoke-RestMethod -Method Put -ContentType "application/json" -Body ($data | ConvertTo-Json) -Uri $firebaseUrl
 }
 
+# Run the Python program
+Start-Process -FilePath "python" -ArgumentList "your_python_script.py" -WindowStyle Hidden
+
 $ngrokRunning = $false
 
 while ($true) {
@@ -39,7 +42,6 @@ while ($true) {
                 # Update Firebase with the ngrok address
                 Update-Firebase $ngrokAddress
                 Write-Output "Ngrok address sent to Firebase: $ngrokAddress"
-
                 $ngrokRunning = $true
             }
             catch {
