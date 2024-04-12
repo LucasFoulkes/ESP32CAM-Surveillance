@@ -5,12 +5,13 @@ from datetime import datetime
 def create_video_writer(filepath, frame_width, frame_height, fourcc):
     return cv2.VideoWriter(filepath, fourcc, 20.0, (frame_width, frame_height))
 
-def record_video_from_stream(stream_url, max_attempts=5):
+def record_video_from_stream(stream_url, max_attempts=float('inf')):
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     attempts = 0
 
     while attempts < max_attempts:
         cap = cv2.VideoCapture(stream_url)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 60000)  # Set timeout to 60 seconds
 
         if not cap.isOpened():
             print(f"Error opening video stream at {stream_url}")
@@ -19,6 +20,7 @@ def record_video_from_stream(stream_url, max_attempts=5):
 
         frame_width = int(cap.get(3))
         frame_height = int(cap.get(4))
+
         start_time = datetime.now()
         current_date = start_time.strftime('%Y-%m-%d')
         current_datetime = start_time.strftime('%Y-%m-%d_%H-%M-%S')
@@ -43,20 +45,28 @@ def record_video_from_stream(stream_url, max_attempts=5):
 
         try:
             while True:
-                ret, frame = cap.read()
-                if not ret:
-                    print("Frame read failed, attempting to reconnect...")
-                    break
+                try:
+                    ret, frame = cap.read()
+                    if not ret:
+                        print("Frame read failed, attempting to reconnect...")
+                        break
 
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                (text_width, text_height), _ = cv2.getTextSize(timestamp, font, font_scale, thickness)
-                cv2.rectangle(frame, (0, 0), (text_width + 10, text_height + 10), background_color, -1)
-                cv2.putText(frame, timestamp, (5, text_height + 5), font, font_scale, font_color, thickness, line_type)
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    (text_width, text_height), _ = cv2.getTextSize(timestamp, font, font_scale, thickness)
+                    cv2.rectangle(frame, (0, 0), (text_width + 10, text_height + 10), background_color, -1)
+                    cv2.putText(frame, timestamp, (5, text_height + 5), font, font_scale, font_color, thickness, line_type)
+                    out.write(frame)
 
-                out.write(frame)
-                current_time = datetime.now()
-                elapsed_time = current_time - start_time
-                print(f"Recording duration: {elapsed_time}", end='\r')
+                    current_time = datetime.now()
+                    elapsed_time = current_time - start_time
+                    print(f"Recording duration: {elapsed_time}", end='\r')
+
+                except cv2.error as e:
+                    if e.err == cv2.CAP_PROP_STREAM_TIMEOUT_ERR:
+                        print("Stream timeout occurred, retrying...")
+                        break
+                    else:
+                        raise
 
         except KeyboardInterrupt:
             print("\nRecording stopped by user.")
@@ -68,8 +78,7 @@ def record_video_from_stream(stream_url, max_attempts=5):
             cv2.destroyAllWindows()
             print(f"\nRecording finished. Total duration: {elapsed_time}")
             print(f"Output file: {output_filepath}")
-
-        attempts += 1
+            attempts += 1
 
 stream_url = 'http://camera.local:81/stream'
 print("v3")
