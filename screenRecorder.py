@@ -8,7 +8,7 @@ if not os.path.exists("recordings"):
     os.makedirs("recordings")
 
 # Set the JPEG quality
-jpeg_quality = 5  # Reduce this value to lower quality and size
+jpeg_quality = 20  # Reduce this value to lower quality and size
 scale_factor = 0.5  # Reduce the image size to 50% of its original dimensions
 
 while True:
